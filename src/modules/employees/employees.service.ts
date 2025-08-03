@@ -1,27 +1,35 @@
 import {
-  Injectable,
-  InternalServerErrorException,
-  NotFoundException,
-} from '@nestjs/common';
-
-import { CreateEmployeeBodyDto } from './dto/create-employee.dto';
-import { Employee, EmployeeSchema } from './schema/employee.schema';
-import {
   Connection,
   createConnection,
   RootFilterQuery,
   SortOrder,
   UpdateQuery,
 } from 'mongoose';
+
+import {
+  Injectable,
+  InternalServerErrorException,
+  NotFoundException,
+} from '@nestjs/common';
+
+import {
+  MONGO_CTU_URL,
+  MONGO_FPT_URL,
+  MONGO_TDU_URL,
+  MONGO_UNIVERSITY_URL,
+} from 'src/constants/database.constant';
+import sortHelper from 'src/helpers/sort.helper';
+import paginationHelper from 'src/helpers/pagination.helper';
+
 import {
   UpdateEmployeeByCodeBodyDto,
   UpdateEmployeeByCodeParamDto,
 } from './dto/update-employee-by-code.dto';
 import { FindEmployeesQueryDto } from './dto/find-employees.dto';
-import paginationHelper from 'src/helpers/pagination.helper';
-import sortHelper from 'src/helpers/sort.helper';
-import { DeleteEmployeeByCodeParamDto } from './dto/delete-employee-by-code.dto';
+import { CreateEmployeeBodyDto } from './dto/create-employee.dto';
+import { Employee, EmployeeSchema } from './schema/employee.schema';
 import { FindEmployeeByCode } from './dto/find-employee-by-code.dto';
+import { DeleteEmployeeByCodeParamDto } from './dto/delete-employee-by-code.dto';
 
 @Injectable()
 export class EmployeesService {
@@ -34,7 +42,16 @@ export class EmployeesService {
       return this.connections.get(dbName);
     }
 
-    const uri = `mongodb+srv://tinht5667:0zp98Y7TaQ88jcBS@cluster0.sgcqdmm.mongodb.net/${dbName}?retryWrites=true&w=majority`;
+    let uri = '';
+    if (dbName === 'ctu') {
+      uri = MONGO_CTU_URL;
+    } else if (dbName === 'fpt') {
+      uri = MONGO_FPT_URL;
+    } else if (dbName === 'tdu') {
+      uri = MONGO_TDU_URL;
+    } else {
+      uri = MONGO_UNIVERSITY_URL;
+    }
     const conn = await createConnection(uri).asPromise();
 
     conn.model(Employee.name, EmployeeSchema);
@@ -64,7 +81,11 @@ export class EmployeesService {
       return 'fpt';
     }
 
-    return 'tdu';
+    if (codeFirstLetter === 'T') {
+      return 'tdu';
+    }
+
+    return 'universities';
   }
 
   async create({ dbName, doc }: { dbName: string; doc: Employee }) {
@@ -151,6 +172,16 @@ export class EmployeesService {
 
     const dbName = this.getDbNameFromCode({ code });
 
+    await this.create({
+      dbName: 'universities',
+      doc: {
+        code,
+        fullName,
+        address,
+        status,
+        lib,
+      },
+    });
     return await this.create({
       dbName,
       doc: {
@@ -185,6 +216,15 @@ export class EmployeesService {
     if (!employeeExists) {
       throw new NotFoundException('Employee code not found');
     }
+    await this.findOneAndUpdate({
+      dbName: 'universities',
+      filter: { code },
+      update: {
+        fullName,
+        address,
+        status,
+      },
+    });
 
     return employeeExists;
   }
@@ -201,6 +241,10 @@ export class EmployeesService {
     if (!employeeExists) {
       throw new NotFoundException('Employee code not found');
     }
+    await this.findOneAndDelete({
+      dbName: 'universities',
+      filter: { code },
+    });
 
     return {};
   }
@@ -211,7 +255,7 @@ export class EmployeesService {
 
     const filterOptions: {
       university: string;
-    } = { university: 'ctu' };
+    } = { university: '' };
     const pagination = paginationHelper(page, limit);
     let sort = {};
 
@@ -225,7 +269,7 @@ export class EmployeesService {
       sort = sortHelper(sortBy as string, sortOrder as string);
     }
 
-    const dbName = filterOptions.university;
+    const dbName = filterOptions.university || 'universities';
 
     const [total, items] = await Promise.all([
       this.countDocuments({ dbName, filter: {} }),

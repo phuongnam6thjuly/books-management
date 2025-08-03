@@ -25,6 +25,12 @@ import { Student, StudentSchema } from './schema/student.schema';
 import { FindStudentByCode } from './dto/find-student-by-code.dto';
 import { EStudentUniversity } from './enums/student-university.enum';
 import { DeleteStudentByCodeParamDto } from './dto/delete-student-by-code.dto';
+import {
+  MONGO_CTU_URL,
+  MONGO_FPT_URL,
+  MONGO_TDU_URL,
+  MONGO_UNIVERSITY_URL,
+} from 'src/constants/database.constant';
 
 @Injectable()
 export class StudentsService {
@@ -37,7 +43,16 @@ export class StudentsService {
       return this.connections.get(dbName);
     }
 
-    const uri = `mongodb+srv://tinht5667:0zp98Y7TaQ88jcBS@cluster0.sgcqdmm.mongodb.net/${dbName}?retryWrites=true&w=majority`;
+    let uri = '';
+    if (dbName === 'ctu') {
+      uri = MONGO_CTU_URL;
+    } else if (dbName === 'fpt') {
+      uri = MONGO_FPT_URL;
+    } else if (dbName === 'tdu') {
+      uri = MONGO_TDU_URL;
+    } else {
+      uri = MONGO_UNIVERSITY_URL;
+    }
     const conn = await createConnection(uri).asPromise();
 
     conn.model(Student.name, StudentSchema);
@@ -67,7 +82,11 @@ export class StudentsService {
       return 'fpt';
     }
 
-    return 'tdu';
+    if (codeFirstLetter === 'T') {
+      return 'tdu';
+    }
+
+    return 'universities';
   }
 
   async create({ dbName, doc }: { dbName: string; doc: Student }) {
@@ -152,6 +171,17 @@ export class StudentsService {
   async createStudent(body: CreateStudentBodyDto) {
     const { code, fullName, address, university, major, borrowCount } = body;
 
+    await this.create({
+      dbName: 'universities',
+      doc: {
+        code,
+        fullName,
+        address,
+        university: university as EStudentUniversity,
+        major,
+        borrowCount,
+      },
+    });
     return await this.create({
       dbName: body.university,
       doc: {
@@ -188,6 +218,16 @@ export class StudentsService {
     if (!studentExists) {
       throw new NotFoundException('Student code not found');
     }
+    await this.findOneAndUpdate({
+      dbName: 'universities',
+      filter: { code },
+      update: {
+        fullName,
+        address,
+        major,
+        borrowCount,
+      },
+    });
 
     return studentExists;
   }
@@ -204,6 +244,10 @@ export class StudentsService {
     if (!studentExists) {
       throw new NotFoundException('Student code not found');
     }
+    await this.findOneAndDelete({
+      dbName: 'universities',
+      filter: { code },
+    });
 
     return {};
   }
@@ -214,7 +258,7 @@ export class StudentsService {
 
     const filterOptions: {
       university: string;
-    } = { university: 'ctu' };
+    } = { university: '' };
     const pagination = paginationHelper(page, limit);
     let sort = {};
 
@@ -228,7 +272,7 @@ export class StudentsService {
       sort = sortHelper(sortBy as string, sortOrder as string);
     }
 
-    const dbName = filterOptions.university;
+    const dbName = filterOptions.university || 'universities';
 
     const [total, items] = await Promise.all([
       this.countDocuments({ dbName, filter: filterOptions }),

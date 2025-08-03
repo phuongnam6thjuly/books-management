@@ -7,21 +7,23 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 
-import { Author, AuthorSchema } from './schema/author.schema';
-import { CreateAuthorBodyDto } from './dto/create-author.dto';
+import sortHelper from 'src/helpers/sort.helper';
+import paginationHelper from 'src/helpers/pagination.helper';
+import { MONGO_UNIVERSITY_URL } from 'src/constants/database.constant';
+
 import {
   UpdateAuthorByCodeBodyDto,
   UpdateAuthorByCodeParamDto,
 } from './dto/update-author-by-code.dto';
-import { DeleteAuthorByCodeParamDto } from './dto/delete-author-by-code.dto';
 import { FindAuthorsQueryDto } from './dto/find-authors.dto';
-import paginationHelper from 'src/helpers/pagination.helper';
-import sortHelper from 'src/helpers/sort.helper';
+import { Author, AuthorSchema } from './schema/author.schema';
+import { CreateAuthorBodyDto } from './dto/create-author.dto';
 import { FindAuthorByCode } from './dto/find-author-by-code.dto';
+import { DeleteAuthorByCodeParamDto } from './dto/delete-author-by-code.dto';
 
 @Injectable()
 export class AuthorsService {
-  private readonly dbName = 'ctu';
+  private readonly dbName = 'universities';
   private readonly connections = new Map<string, Connection>();
 
   constructor() {}
@@ -31,7 +33,7 @@ export class AuthorsService {
       return this.connections.get(dbName);
     }
 
-    const uri = `mongodb+srv://tinht5667:0zp98Y7TaQ88jcBS@cluster0.sgcqdmm.mongodb.net/${dbName}?retryWrites=true&w=majority`;
+    const uri = MONGO_UNIVERSITY_URL;
     const conn = await createConnection(uri).asPromise();
 
     conn.model(Author.name, AuthorSchema);
@@ -113,7 +115,10 @@ export class AuthorsService {
   }) {
     const AuthorModel = await this.getAuthorModel(dbName);
 
-    return await AuthorModel.findOneAndUpdate(filter, update);
+    return await AuthorModel.findOneAndUpdate(filter, update, {
+      new: true,
+      runValidators: true,
+    });
   }
 
   async findOneAndDelete({

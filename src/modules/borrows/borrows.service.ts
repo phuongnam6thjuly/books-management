@@ -12,11 +12,18 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 
+import {
+  MONGO_CTU_URL,
+  MONGO_FPT_URL,
+  MONGO_TDU_URL,
+  MONGO_UNIVERSITY_URL,
+} from 'src/constants/database.constant';
 import sortHelper from 'src/helpers/sort.helper';
 import paginationHelper from 'src/helpers/pagination.helper';
+
+import { FindBorrowsQueryDto } from './dto/find-borrows.dto';
 import { Borrow, BorrowSchema } from './schema/borrow.schema';
 import { CreateBorrowBodyDto } from './dto/create-borrow.dto';
-import { FindBorrowsQueryDto } from './dto/find-borrows.dto';
 import { FindBorrowByCode } from './dto/find-borrow-by-code.dto';
 
 @Injectable()
@@ -30,7 +37,16 @@ export class BorrowsService {
       return this.connections.get(dbName);
     }
 
-    const uri = `mongodb+srv://tinht5667:0zp98Y7TaQ88jcBS@cluster0.sgcqdmm.mongodb.net/${dbName}?retryWrites=true&w=majority`;
+    let uri = '';
+    if (dbName === 'ctu') {
+      uri = MONGO_CTU_URL;
+    } else if (dbName === 'fpt') {
+      uri = MONGO_FPT_URL;
+    } else if (dbName === 'tdu') {
+      uri = MONGO_TDU_URL;
+    } else {
+      uri = MONGO_UNIVERSITY_URL;
+    }
     const conn = await createConnection(uri).asPromise();
 
     conn.model(Borrow.name, BorrowSchema);
@@ -60,7 +76,11 @@ export class BorrowsService {
       return 'fpt';
     }
 
-    return 'tdu';
+    if (codeFirstLetter === 'T') {
+      return 'tdu';
+    }
+
+    return 'universities';
   }
 
   async create({ dbName, doc }: { dbName: string; doc: Borrow }) {
@@ -145,8 +165,17 @@ export class BorrowsService {
   async createBorrow(body: CreateBorrowBodyDto) {
     const { bookCode, studentCode, borrowDate, returnDate } = body;
 
-    const dbName = this.getDbNameFromCode({ code: studentCode });
+    const dbName = this.getDbNameFromCode({ code: bookCode });
 
+    await this.create({
+      dbName: 'universities',
+      doc: {
+        bookCode,
+        studentCode,
+        borrowDate,
+        returnDate,
+      },
+    });
     return await this.create({
       dbName,
       doc: {
@@ -164,7 +193,7 @@ export class BorrowsService {
 
     const filterOptions: {
       university: string;
-    } = { university: 'ctu' };
+    } = { university: '' };
     const pagination = paginationHelper(page, limit);
     let sort = {};
 
@@ -178,7 +207,7 @@ export class BorrowsService {
       sort = sortHelper(sortBy as string, sortOrder as string);
     }
 
-    const dbName = filterOptions.university;
+    const dbName = filterOptions.university || 'universities';
 
     const [total, items] = await Promise.all([
       this.countDocuments({ dbName, filter: filterOptions }),

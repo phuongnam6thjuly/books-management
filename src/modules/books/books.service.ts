@@ -13,6 +13,12 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 
+import {
+  MONGO_CTU_URL,
+  MONGO_FPT_URL,
+  MONGO_TDU_URL,
+  MONGO_UNIVERSITY_URL,
+} from 'src/constants/database.constant';
 import sortHelper from 'src/helpers/sort.helper';
 import paginationHelper from 'src/helpers/pagination.helper';
 
@@ -39,7 +45,17 @@ export class BooksService {
       return this.connections.get(dbName);
     }
 
-    const uri = `mongodb+srv://tinht5667:0zp98Y7TaQ88jcBS@cluster0.sgcqdmm.mongodb.net/${dbName}?retryWrites=true&w=majority`;
+    let uri = '';
+    if (dbName === 'ctu') {
+      uri = MONGO_CTU_URL;
+    } else if (dbName === 'fpt') {
+      uri = MONGO_FPT_URL;
+    } else if (dbName === 'tdu') {
+      uri = MONGO_TDU_URL;
+    } else {
+      uri = MONGO_UNIVERSITY_URL;
+    }
+
     const conn = await createConnection(uri).asPromise();
 
     conn.model(Book.name, BookSchema);
@@ -69,7 +85,11 @@ export class BooksService {
       return 'fpt';
     }
 
-    return 'tdu';
+    if (codeFirstLetter === 'T') {
+      return 'tdu';
+    }
+
+    return 'universities';
   }
 
   async create({ dbName, doc }: { dbName: string; doc: Book }) {
@@ -140,7 +160,10 @@ export class BooksService {
   }) {
     const BookModel = await this.getBookModel(dbName);
 
-    return await BookModel.findOneAndUpdate(filter, update);
+    return await BookModel.findOneAndUpdate(filter, update, {
+      new: true,
+      runValidators: true,
+    });
   }
 
   async findOneAndDelete({
@@ -163,13 +186,26 @@ export class BooksService {
     const dbName = this.getDbNameFromCode({ code });
 
     const authorExists = await this.authorsService.findOne({
-      dbName: 'ctu',
+      dbName: 'universities',
       filter: { _id: authorId },
     });
     if (!authorExists) {
       throw new NotFoundException('Author id not found');
     }
 
+    await this.create({
+      dbName: 'universities',
+      doc: {
+        code,
+        title,
+        publisher,
+        year,
+        type,
+        quantity,
+        site,
+        authorId: new mongoose.Types.ObjectId(authorId),
+      },
+    });
     return await this.create({
       dbName,
       doc: {
@@ -209,6 +245,17 @@ export class BooksService {
     if (!bookExists) {
       throw new NotFoundException('Book code not found');
     }
+    await this.findOneAndUpdate({
+      dbName: 'universities',
+      filter: { code },
+      update: {
+        title,
+        publisher,
+        year,
+        type,
+        quantity,
+      },
+    });
 
     return bookExists;
   }
@@ -218,6 +265,7 @@ export class BooksService {
     const { code } = param;
 
     const dbName = this.getDbNameFromCode({ code });
+
     const bookExists = await this.findOneAndDelete({
       dbName,
       filter: { code },
@@ -225,6 +273,10 @@ export class BooksService {
     if (!bookExists) {
       throw new NotFoundException('Book code not found');
     }
+    await this.findOneAndDelete({
+      dbName: 'universities',
+      filter: { code },
+    });
 
     return {};
   }
@@ -235,7 +287,7 @@ export class BooksService {
 
     const filterOptions: {
       university: string;
-    } = { university: 'ctu' };
+    } = { university: '' };
     const pagination = paginationHelper(page, limit);
     let sort = {};
 
@@ -249,7 +301,7 @@ export class BooksService {
       sort = sortHelper(sortBy as string, sortOrder as string);
     }
 
-    const dbName = filterOptions.university;
+    const dbName = filterOptions.university || 'universities';
 
     const [total, items] = await Promise.all([
       this.countDocuments({ dbName, filter: {} }),
